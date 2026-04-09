@@ -1,0 +1,17 @@
+require("dotenv").config();
+const line = require("@line/bot-sdk");
+
+const lineConfig = {
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.LINE_CHANNEL_SECRET,
+};
+
+const client = new line.messagingApi.MessagingApiClient({
+  channelAccessToken: lineConfig.channelAccessToken,
+});
+
+module.exports = {
+  line,
+  lineConfig,
+  client,
+};
