@@ -13,10 +13,10 @@ function formatDateTime(dateString) {
 
 function formatTags(tags) {
     if (!Array.isArray(tags) || tags.length === 0) {
-        return '-';
+        return "-";
     }
 
-    return tags.join(', ');
+    return tags.join(", ");
 }
 
 function formatLeadNotification(lead) {
@@ -32,32 +32,54 @@ function formatLeadNotification(lead) {
     ].join("\n");
 }
 
-async function notifyNewLead(lead) {
-    const salesUserId = process.env.SALES_LINE_USER_ID;
+function getSalesUserIds() {
+    const multiIds = process.env.SALES_LINE_USER_IDS;
+    const singleId = process.env.SALES_LINE_USER_ID;
 
-    if (!salesUserId) {
-        throw new Error("Missing SALES_LINE_USER_ID in environment variables");
+    if (multiIds) {
+        return multiIds
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean);
     }
 
+    if (singleId) {
+        return [singleId.trim()];
+    }
+
+    throw new Error("Missing SALES_LINE_USER_IDS or SALES_LINE_USER_ID in environment variables");
+}
+
+async function notifyNewLead(lead) {
     if (!lead) {
         throw new Error("Lead data is required");
     }
 
+    const salesUserIds = getSalesUserIds();
     const messageText = formatLeadNotification(lead);
 
     console.log("[NOTIFICATION] Sending new lead notification...", {
-        salesUserId,
+        salesUserIds,
         lead,
     });
 
-    await lineService.pushText(salesUserId, messageText);
+    const results = [];
+
+    for (const userId of salesUserIds) {
+        await lineService.pushText(userId, messageText);
+        results.push({
+            success: true,
+            target: userId,
+        });
+    }
 
     console.log("[NOTIFICATION] Sent successfully");
 
     return {
         success: true,
-        target: salesUserId,
+        targets: salesUserIds,
         message: messageText,
+        results,
     };
 }
 
