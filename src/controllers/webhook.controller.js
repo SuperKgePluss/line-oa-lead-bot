@@ -20,9 +20,9 @@ async function handleWebhook(req, res) {
             const userText = event.message.text;
 
             try {
-                await sheetService.updateLastInteractionByUserId(userId, new Date().toISOString());
+                await sheetService.resetFollowUpByUserId(userId, new Date().toISOString());
             } catch (error) {
-                console.error("[SHEET] Failed to update last interaction:", error.message);
+                console.error("[SHEET] Failed to reset follow-up:", error.message);
             }
 
             const existingState = userStateRepository.getUserState(userId);

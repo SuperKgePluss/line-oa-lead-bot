@@ -1,6 +1,7 @@
 const express = require("express");
 const webhookRoute = require("./routes/webhook.route");
 const followupService = require("./services/followup.service");
+const FOLLOWUP_CHECK_INTERVAL_MS = Number(process.env.FOLLOWUP_CHECK_INTERVAL_MS || 24 * 60 * 60 * 1000);
 
 const app = express();
 
@@ -14,6 +15,6 @@ setInterval(async () => {
     } catch (error) {
         console.error("[FOLLOWUP] scheduler error:", error);
     }
-}, 5 * 60 * 1000);
+}, FOLLOWUP_CHECK_INTERVAL_MS);
 
 module.exports = app;

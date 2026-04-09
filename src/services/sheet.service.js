@@ -89,17 +89,29 @@ class SheetService {
 
     mapLeadToRow(lead) {
         return [
-            this.formatThaiDateTime(lead.completedAt),                  // Date (แสดงไทย)
-            lead.name || '',
-            lead.product || '',
-            lead.quantity || '',
-            lead.userId || '',
-            lead.triggerKeyword || '',
-            this.formatTags(lead.tags),
-            lead.followUpStatus || 'pending',
-            this.formatDisplayDateTime(lead.lastInteractionAt || lead.completedAt), // อ่านง่าย
-            this.formatDisplayDateTime(lead.followUpSentAt),           // อ่านง่าย
+            this.formatThaiDateTime(lead.completedAt), // A Date
+            lead.name || '',                           // B Name
+            lead.product || '',                        // C Product
+            lead.quantity || '',                       // D Quantity
+            lead.userId || '',                         // E UserID
+            lead.triggerKeyword || '',                 // F Keyword
+            this.formatTags(lead.tags),                // G Tags
+            lead.followUpStatus || 'pending',          // H FollowUpStatus
+            this.formatDisplayDateTime(lead.lastInteractionAt || lead.completedAt), // I
+            this.formatDisplayDateTime(lead.followUpSentAt),                        // J
+            String(lead.followUpStage ?? 0),           // K FollowUpStage
+            this.formatDisplayDateTime(lead.nextFollowUpAt), // L NextFollowUpAt
+            this.formatDisplayDateTime(lead.followUpSent1At), // M
+            this.formatDisplayDateTime(lead.followUpSent2At), // N
+            this.formatDisplayDateTime(lead.followUpSent3At), // O
+            this.formatDisplayDateTime(lead.followUpSent4At), // P
         ];
+    }
+
+    addDays(dateValue, days) {
+        const date = new Date(dateValue);
+        date.setDate(date.getDate() + days);
+        return date;
     }
 
     async appendLead(lead) {
@@ -113,7 +125,7 @@ class SheetService {
 
         const response = await this.sheets.spreadsheets.values.append({
             spreadsheetId: this.spreadsheetId,
-            range: `${this.sheetName}!A:J`,
+            range: `${this.sheetName}!A:P`,
             valueInputOption: 'USER_ENTERED',
             insertDataOption: 'INSERT_ROWS',
             requestBody: {
@@ -129,7 +141,7 @@ class SheetService {
 
         const response = await this.sheets.spreadsheets.values.get({
             spreadsheetId: this.spreadsheetId,
-            range: `${this.sheetName}!A:J`,
+            range: `${this.sheetName}!A:P`,
         });
 
         const rows = response.data.values || [];
@@ -149,6 +161,12 @@ class SheetService {
             followUpStatus: row[7] || '',
             lastInteractionAt: row[8] || '',
             followUpSentAt: row[9] || '',
+            followUpStage: Number(row[10] || 0),
+            nextFollowUpAt: row[11] || '',
+            followUpSent1At: row[12] || '',
+            followUpSent2At: row[13] || '',
+            followUpSent3At: row[14] || '',
+            followUpSent4At: row[15] || '',
         }));
     }
 
@@ -195,6 +213,119 @@ class SheetService {
         });
 
         return true;
+    }
+
+    async resetFollowUpByUserId(userId, timestamp) {
+        this.validateConfig();
+
+        const leads = await this.getAllLeads();
+        const matchedLeads = leads.filter((lead) => lead.userId === userId);
+
+        if (matchedLeads.length === 0) {
+            return false;
+        }
+
+        const latestLead = matchedLeads[matchedLeads.length - 1];
+        const nextFollowUpAt = this.addDays(timestamp, 30);
+
+        await this.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: this.spreadsheetId,
+            requestBody: {
+                valueInputOption: 'USER_ENTERED',
+                data: [
+                    {
+                        range: `${this.sheetName}!H${latestLead.rowIndex}`,
+                        values: [['pending']],
+                    },
+                    {
+                        range: `${this.sheetName}!I${latestLead.rowIndex}`,
+                        values: [[this.formatDisplayDateTime(timestamp)]],
+                    },
+                    {
+                        range: `${this.sheetName}!K${latestLead.rowIndex}`,
+                        values: [[0]],
+                    },
+                    {
+                        range: `${this.sheetName}!L${latestLead.rowIndex}`,
+                        values: [[this.formatDisplayDateTime(nextFollowUpAt)]],
+                    },
+                ],
+            },
+        });
+
+        return true;
+    }
+
+    async updateFollowUpProgress(rowIndex, payload) {
+        this.validateConfig();
+
+        const data = [];
+
+        if (payload.followUpStatus !== undefined) {
+            data.push({
+                range: `${this.sheetName}!H${rowIndex}`,
+                values: [[payload.followUpStatus]],
+            });
+        }
+
+        if (payload.followUpSentAt !== undefined) {
+            data.push({
+                range: `${this.sheetName}!J${rowIndex}`,
+                values: [[this.formatDisplayDateTime(payload.followUpSentAt)]],
+            });
+        }
+
+        if (payload.followUpStage !== undefined) {
+            data.push({
+                range: `${this.sheetName}!K${rowIndex}`,
+                values: [[payload.followUpStage]],
+            });
+        }
+
+        if (payload.nextFollowUpAt !== undefined) {
+            data.push({
+                range: `${this.sheetName}!L${rowIndex}`,
+                values: [[this.formatDisplayDateTime(payload.nextFollowUpAt)]],
+            });
+        }
+
+        if (payload.followUpSent1At !== undefined) {
+            data.push({
+                range: `${this.sheetName}!M${rowIndex}`,
+                values: [[this.formatDisplayDateTime(payload.followUpSent1At)]],
+            });
+        }
+
+        if (payload.followUpSent2At !== undefined) {
+            data.push({
+                range: `${this.sheetName}!N${rowIndex}`,
+                values: [[this.formatDisplayDateTime(payload.followUpSent2At)]],
+            });
+        }
+
+        if (payload.followUpSent3At !== undefined) {
+            data.push({
+                range: `${this.sheetName}!O${rowIndex}`,
+                values: [[this.formatDisplayDateTime(payload.followUpSent3At)]],
+            });
+        }
+
+        if (payload.followUpSent4At !== undefined) {
+            data.push({
+                range: `${this.sheetName}!P${rowIndex}`,
+                values: [[this.formatDisplayDateTime(payload.followUpSent4At)]],
+            });
+        }
+
+        if (data.length === 0) return;
+
+        await this.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: this.spreadsheetId,
+            requestBody: {
+                valueInputOption: 'USER_ENTERED',
+                data,
+            },
+        });
     }
 }
 

@@ -1,6 +1,12 @@
 const userStateRepository = require("../repositories/userState.repository");
 const { isValidQuantity } = require("../utils/validator.util");
 
+function addDays(dateString, days) {
+    const date = new Date(dateString);
+    date.setDate(date.getDate() + days);
+    return date.toISOString();
+}
+
 function startFlow(userId, triggerKeyword) {
     const initialState = {
         userId,
@@ -140,6 +146,12 @@ function completeFlow(userId) {
         followUpStatus: "pending",
         lastInteractionAt: completedAt,
         followUpSentAt: "",
+        followUpStage: 0,
+        followUpSent1At: "",
+        followUpSent2At: "",
+        followUpSent3At: "",
+        followUpSent4At: "",
+        nextFollowUpAt: addDays(completedAt, 30),
     };
 
     state.inFlow = false;
