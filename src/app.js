@@ -1,11 +1,13 @@
 const express = require("express");
 const webhookRoute = require("./routes/webhook.route");
+const legacyWebhookRoute = require("./routes/legacyWebhook.route");
 const followupService = require("./services/followup.service");
 const FOLLOWUP_CHECK_INTERVAL_MS = Number(process.env.FOLLOWUP_CHECK_INTERVAL_MS || 24 * 60 * 60 * 1000);
 
 const app = express();
 
 app.use("/webhook", webhookRoute);
+app.use("/webhook-legacy", legacyWebhookRoute);
 app.use(express.json());
 
 setInterval(async () => {
