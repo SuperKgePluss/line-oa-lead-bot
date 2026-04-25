@@ -1,17 +1,50 @@
-const userStateRepository = require("../repositories/userState.repository");
-const sheetService = require("../services/sheet.service");
+﻿const sheetService = require("../services/sheet.service");
 const notificationService = require("../services/notification.service");
 const taggingService = require("../services/tagging.service");
-const { isValidQuantity } = require("../utils/validator.util");
 
-function getLegacyUserKey(userId) {
-    return `legacy:${userId}`;
-}
+const PRODUCT_KEYWORDS = [
+    "ppe",
+    "หน้ากาก",
+    "mask",
+    "toggle",
+    "clamp",
+    "toggle clamp",
+    "อะไหล่",
+    "วาล์ว",
+    "แคลมป์",
+    "สปริง",
+    "กิ๊บสแตนเลส",
+    "ล้อ",
+];
 
 function addDays(dateString, days) {
     const date = new Date(dateString);
     date.setDate(date.getDate() + days);
     return date.toISOString();
+}
+
+function normalizeText(text) {
+    return String(text || "").trim().toLowerCase();
+}
+
+function detectProduct(text) {
+    const normalized = normalizeText(text);
+
+    const matchedKeyword = PRODUCT_KEYWORDS.find((keyword) =>
+        normalized.includes(keyword.toLowerCase())
+    );
+
+    return matchedKeyword || null;
+}
+
+function extractQuantity(text) {
+    const match = String(text || "").match(/\d+/);
+    if (!match) return "";
+
+    const quantity = Number(match[0]);
+    if (!Number.isFinite(quantity) || quantity <= 0) return "";
+
+    return quantity;
 }
 
 async function handleLegacyWebhook(req, res) {
@@ -24,90 +57,58 @@ async function handleLegacyWebhook(req, res) {
 
             const userId = event.source.userId;
             const userText = (event.message.text || "").trim();
+
             if (!userId || !userText) continue;
 
-            const stateKey = getLegacyUserKey(userId);
-            let state = userStateRepository.getUserState(stateKey);
+            const detectedProduct = detectProduct(userText);
 
-            if (!state) {
-                state = {
+            // ถ้าไม่มีสินค้า/keyword ที่สนใจ ยังไม่บันทึก
+            if (!detectedProduct) {
+                console.log("[LEGACY] No product keyword detected, skipped:", {
                     userId,
-                    inFlow: true,
-                    flowType: "legacy_lead",
-                    currentStep: "ask_product",
-                    leadData: {
-                        name: userText,
-                        product: "",
-                        quantity: "",
-                    },
-                    startedAt: new Date().toISOString(),
-                    lastInteractionAt: new Date().toISOString(),
-                };
-
-                userStateRepository.setUserState(stateKey, state);
-                console.log("[LEGACY] Step 1 saved (name):", { userId, name: userText });
+                    text: userText,
+                });
                 continue;
             }
 
-            if (state.currentStep === "ask_product") {
-                state.leadData.product = userText;
-                state.currentStep = "ask_quantity";
-                state.lastInteractionAt = new Date().toISOString();
+            const now = new Date().toISOString();
+            const quantity = extractQuantity(userText);
 
-                userStateRepository.setUserState(stateKey, state);
-                console.log("[LEGACY] Step 2 saved (product):", { userId, product: userText });
-                continue;
+            const completedLead = {
+                userId,
+                triggerKeyword: "legacy_smart_capture",
+                name: "ไม่ระบุ",
+                product: detectedProduct,
+                quantity,
+                startedAt: now,
+                completedAt: now,
+                followUpStatus: "pending",
+                lastInteractionAt: now,
+                followUpSentAt: "",
+                followUpStage: 0,
+                followUpSent1At: "",
+                followUpSent2At: "",
+                followUpSent3At: "",
+                followUpSent4At: "",
+                nextFollowUpAt: addDays(now, 30),
+            };
+
+            completedLead.tags = taggingService.generateTags(completedLead);
+
+            try {
+                await sheetService.appendLead(completedLead);
+                console.log("[LEGACY] Smart lead appended successfully:", completedLead);
+            } catch (error) {
+                console.error("[LEGACY][SHEET] Failed to append smart lead:", error.message);
+                console.error(error);
             }
 
-            if (state.currentStep === "ask_quantity") {
-                if (!isValidQuantity(userText)) {
-                    console.log("[LEGACY] Invalid quantity, ignored:", { userId, text: userText });
-                    continue;
-                }
-
-                state.leadData.quantity = Number(userText.trim());
-                state.completedAt = new Date().toISOString();
-                state.lastInteractionAt = state.completedAt;
-
-                const completedLead = {
-                    userId: state.userId,
-                    triggerKeyword: "legacy_manual",
-                    name: state.leadData.name,
-                    product: state.leadData.product,
-                    quantity: state.leadData.quantity,
-                    startedAt: state.startedAt,
-                    completedAt: state.completedAt,
-                    followUpStatus: "pending",
-                    lastInteractionAt: state.completedAt,
-                    followUpSentAt: "",
-                    followUpStage: 0,
-                    followUpSent1At: "",
-                    followUpSent2At: "",
-                    followUpSent3At: "",
-                    followUpSent4At: "",
-                    nextFollowUpAt: addDays(state.completedAt, 30),
-                };
-
-                completedLead.tags = taggingService.generateTags(completedLead);
-
-                try {
-                    await sheetService.appendLead(completedLead);
-                    console.log("[LEGACY] Lead appended successfully:", completedLead);
-                } catch (error) {
-                    console.error("[LEGACY][SHEET] Failed to append lead:", error.message);
-                    console.error(error);
-                }
-
-                try {
-                    await notificationService.notifyNewLead(completedLead);
-                    console.log("[LEGACY] Notification sent successfully");
-                } catch (error) {
-                    console.error("[LEGACY][NOTIFICATION] Failed:", error.message);
-                    console.error(error);
-                }
-
-                userStateRepository.clearUserState(stateKey);
-                continue;
+            try {
+                await notificationService.notifyNewLead(completedLead);
+                console.log("[LEGACY] Notification sent successfully");
+            } catch (error) {
+                console.error("[LEGACY][NOTIFICATION] Failed:", error.message);
+                console.error(error);
             }
         }
 
